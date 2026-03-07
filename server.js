@@ -25,8 +25,8 @@ app.post("/create-checkout-session", async (req, res) => {
         },
         quantity: item.quantity,
       })),
-      success_url: "https://letme.store/success.html",
-      cancel_url: "https://letme.store/cancel.html",
+      success_url: "https://letmestore.pl/success.html",
+      cancel_url: "https://letmestore.pl/cancel.html",
     });
 
     res.json({ url: session.url });
