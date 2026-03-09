@@ -4,10 +4,12 @@ import cors from "cors";
 import fetch from "node-fetch";
 
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
+// Stripe i webhook secret
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 /* BREVO MAILER */
 async function sendOrderToBrevo(discord, email, items) {
@@ -22,7 +24,7 @@ async function sendOrderToBrevo(discord, email, items) {
       "api-key": process.env.BREVO_API_KEY
     },
     body: JSON.stringify({
-      sender: { name: "letme.store", email: "letme.store@letme.hub.pl" }, // <-- poprawione
+      sender: { name: "letme.store", email: "letme.store@letme.hub.pl" },
       to: [{ email: process.env.BREVO_RECEIVER }],
       subject: "NOWE ZAMÓWIENIE",
       textContent: `NOWE ZAMÓWIENIE
@@ -39,9 +41,7 @@ ${productList}`
 /* CHECKOUT */
 app.post("/create-checkout-session", async (req, res) => {
   try {
-    const items = req.body.items;
-    const discord = req.body.discord;
-    const email = req.body.email;
+    const { items, discord, email } = req.body;
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -65,14 +65,22 @@ app.post("/create-checkout-session", async (req, res) => {
 
     res.json({ url: session.url });
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).json({ error: "Błąd tworzenia sesji" });
   }
 });
 
-/* WEBHOOK */
+/* WEBHOOK - tylko express.raw dla Stripe */
 app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  const event = req.body;
+  let event;
+
+  try {
+    const sig = req.headers["stripe-signature"];
+    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+  } catch (err) {
+    console.error("Błąd webhooka:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
