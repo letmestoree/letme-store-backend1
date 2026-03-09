@@ -36,6 +36,27 @@ ${productList}`
   });
 }
 
+/* DISCORD WEBHOOK */
+async function sendOrderToDiscord(discordUser, emailUser, items) {
+  const productList = items.map(i =>
+    `• ${i.name} x${i.quantity} - ${(i.price/100).toFixed(2)} PLN`
+  ).join("\n");
+
+  await fetch(process.env.DISCORD_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content: `📦 **Nowe zamówienie!**
+
+**Discord:** ${discordUser}
+**Email:** ${emailUser}
+
+**Produkty:**
+${productList}`
+    })
+  });
+}
+
 /* CHECKOUT */
 app.post("/create-checkout-session", async (req, res) => {
   try {
@@ -76,16 +97,19 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
   if (event.type === "checkout.session.completed") {
     try {
-      // Pobieramy pełną sesję po ID, żeby mieć metadata
       const session = await stripe.checkout.sessions.retrieve(event.data.object.id);
 
       const discord = session.metadata.discord;
       const email = session.metadata.email;
       const items = JSON.parse(session.metadata.items);
 
+      // Wyślij maila
       await sendOrderToBrevo(discord, email, items);
-      console.log("Mail wysłany:", discord, email, items);
 
+      // Wyślij powiadomienie na Discord
+      await sendOrderToDiscord(discord, email, items);
+
+      console.log("Mail i Discord wysłane:", discord, email, items);
       res.sendStatus(200);
     } catch (err) {
       console.error("Błąd webhooka:", err);
