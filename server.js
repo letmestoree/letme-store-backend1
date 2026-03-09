@@ -10,10 +10,9 @@ app.use(cors());
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 /* BREVO MAILER */
-async function sendOrderMail(discord, email, items) {
-
+async function sendOrderToBrevo(discord, email, items) {
   const productList = items.map(i =>
-    `${i.name} x${i.quantity} - ${i.price / 100} PLN`
+    `${i.name} x${i.quantity} - ${(i.price / 100).toFixed(2)} PLN`
   ).join("\n");
 
   await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -81,8 +80,12 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     const email = session.metadata.email;
     const items = JSON.parse(session.metadata.items);
 
-    await sendOrderMail(discord, email, items);
-    console.log("Mail wysłany:", discord, email, items);
+    try {
+      await sendOrderToBrevo(discord, email, items);
+      console.log("Mail wysłany:", discord, email, items);
+    } catch (err) {
+      console.error("Błąd wysyłki maila przez Brevo:", err);
+    }
   }
 
   res.sendStatus(200);
