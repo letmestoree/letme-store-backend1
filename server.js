@@ -23,7 +23,7 @@ async function sendOrderToBrevo(discord, email, items) {
     },
     body: JSON.stringify({
       sender: { name: "letme.store", email: "letme.store@letme.hub.pl" },
-      to: [{ email: process.env.BREVO_RECEIVER }],  // Twój odbiorca
+      to: [{ email: process.env.BREVO_RECEIVER }],
       subject: "NOWE ZAMÓWIENIE",
       textContent: `NOWE ZAMÓWIENIE
 
@@ -46,13 +46,18 @@ async function sendOrderToDiscord(discordUser, emailUser, items) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      content: `📦 **Nowe zamówienie!**
-
-**Discord:** ${discordUser}
-**Email:** ${emailUser}
-
-**Produkty:**
-${productList}`
+      content: `<@&1475514251920670831> 📦 **Nowe zamówienie!**`,
+      embeds: [
+        {
+          title: "Szczegóły zamówienia",
+          fields: [
+            { name: "Discord", value: discordUser || "brak", inline: true },
+            { name: "Email", value: emailUser || "brak", inline: true },
+            { name: "Produkty", value: productList }
+          ],
+          color: 5814783
+        }
+      ]
     })
   });
 }
@@ -106,7 +111,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
       // Wyślij maila
       await sendOrderToBrevo(discord, email, items);
 
-      // Wyślij powiadomienie na Discord
+      // Wyślij powiadomienie na Discord (ping roli)
       await sendOrderToDiscord(discord, email, items);
 
       console.log("Mail i Discord wysłane:", discord, email, items);
