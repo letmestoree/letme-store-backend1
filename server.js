@@ -22,7 +22,7 @@ async function sendOrderToBrevo(discord, email, items) {
       "api-key": process.env.BREVO_API_KEY
     },
     body: JSON.stringify({
-      sender: { name: "letme.store", email: "letme.store@letme.hub.pl" }
+      sender: { name: "letme.store", email: "letme.store@letme.hub.pl" }, // <-- poprawione
       to: [{ email: process.env.BREVO_RECEIVER }],
       subject: "NOWE ZAMÓWIENIE",
       textContent: `NOWE ZAMÓWIENIE
