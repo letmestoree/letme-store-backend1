@@ -1,11 +1,11 @@
 {
   "name": "letme-store-backend",
   "version": "1.0.0",
-  "main": "server.js",
+  "type": "module",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "stripe": "^14.0.0",
-    "nodemailer": "^6.9.13"
+    "node-fetch": "^3.3.2"
   }
 }
