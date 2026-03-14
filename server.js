@@ -104,7 +104,7 @@ app.post("/create-checkout-session", async (req, res) => {
       mode: "payment",
       // payment_method_types możesz zostawić jak w dokumentacji Stripe;
       // jeśli chcesz BLIK / PayPal, konfigurujesz to w panelu Stripe.
-      payment_method_types: ["card"],
+      payment_method_types: ["card", "blik", "paypal"],
 
       line_items: [
         {
