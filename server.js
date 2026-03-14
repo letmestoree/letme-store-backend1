@@ -65,25 +65,61 @@ async function sendOrderToDiscord(discordUser, emailUser, items) {
 /* CHECKOUT */
 app.post("/create-checkout-session", async (req, res) => {
   try {
-    const items = req.body.items;
-    const discord = req.body.discord;
-    const email = req.body.email;
+    const items = req.body.items || [];
+    const discord = req.body.discord || "";
+    const email = req.body.email || "";
+    const promoCode = (req.body.promoCode || "").toUpperCase();
+    const totalFromClient = Number(req.body.total) || 0;        // grosze
+    const payableFromClient = Number(req.body.payable) || 0;    // grosze
+    const discountFromClient = Number(req.body.discountAmount) || 0;
 
+    // 1. policz total po stronie backendu, żeby nie ufać ślepo frontowi
+    const backendTotal = items.reduce(
+      (sum, item) => sum + Number(item.price) * Number(item.quantity || 1),
+      0
+    );
+
+    // 2. policz rabat po stronie backendu
+    let backendDiscount = 0;
+    if (promoCode === "LETME15") {
+      backendDiscount = Math.round(backendTotal * 0.15);
+    }
+    const backendPayable = Math.max(backendTotal - backendDiscount, 0);
+
+    // 3. wybierz kwotę do Stripe (opcjonalnie możesz użyć backendPayable zawsze)
+    const amountToCharge = backendPayable;
+
+    // 4. UTWÓRZ SESJĘ STRIPE
+    // Tworzymy jedną linię "Zamówienie letme.store" na kwotę po rabacie
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card", "blik", "paypal"],
-      line_items: items.map(item => ({
-        price_data: {
-          currency: "pln",
-          product_data: { name: item.name },
-          unit_amount: item.price,
-        },
-        quantity: item.quantity,
-      })),
+      payment_method_types: ["card"], // BLIK/PayPal konfigurujesz po stronie Stripe; tutaj wystarczy "card"
+      line_items: [
+        {
+          price_data: {
+            currency: "pln",
+            product_data: {
+              name: "Zamówienie letme.store",
+              description: promoCode === "LETME15"
+                ? "Zamówienie z rabatem LETME15 (-15%)"
+                : "Zamówienie w sklepie letme.store"
+            },
+            unit_amount: amountToCharge, // grosze po rabacie
+          },
+          quantity: 1,
+        }
+      ],
       metadata: {
         discord,
         email,
-        items: JSON.stringify(items)
+        items: JSON.stringify(items),
+        backendTotal: backendTotal.toString(),
+        backendDiscount: backendDiscount.toString(),
+        backendPayable: backendPayable.toString(),
+        promoCode,
+        clientTotal: totalFromClient.toString(),
+        clientPayable: payableFromClient.toString(),
+        clientDiscount: discountFromClient.toString()
       },
       success_url: "https://letmestore.pl/success.html",
       cancel_url: "https://letmestore.pl/cancel.html",
@@ -108,10 +144,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
       const email = session.metadata.email;
       const items = JSON.parse(session.metadata.items);
 
-      // Wyślij maila
       await sendOrderToBrevo(discord, email, items);
-
-      // Wyślij powiadomienie na Discord (ping roli)
       await sendOrderToDiscord(discord, email, items);
 
       console.log("Mail i Discord wysłane:", discord, email, items);
