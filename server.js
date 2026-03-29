@@ -68,13 +68,14 @@ async function sendOrderToDiscord(discordUser, emailUser, items) {
   });
 }
 
-/* CHECKOUT – z obsługą rabatu */
+/* CHECKOUT – PROMOCJA WYŁĄCZONA */
 app.post("/create-checkout-session", async (req, res) => {
   try {
     const items = req.body.items || [];
     const discord = req.body.discord || "";
     const email = req.body.email || "";
 
+    // Te pola dalej przyjmujemy z frontu, ale nie używamy do liczenia rabatu:
     const promoCode = (req.body.promoCode || "").toUpperCase();
     const totalFromClient = Number(req.body.total) || 0;        // grosze
     const payableFromClient = Number(req.body.payable) || 0;    // grosze
@@ -88,22 +89,17 @@ app.post("/create-checkout-session", async (req, res) => {
       0
     );
 
-    // 2. policz rabat po stronie backendu
-    let backendDiscount = 0;
-    if (promoCode === "LETME15") {
-      backendDiscount = Math.round(backendTotal * 0.15);
-    }
-
+    // 2. RABAT WYŁĄCZONY
+    const backendDiscount = 0;
     const backendPayable = Math.max(backendTotal - backendDiscount, 0);
 
     // Kwota, którą faktycznie obciążamy klienta (grosze)
     const amountToCharge = backendPayable;
 
-    // 3. Tworzymy SESJĘ STRIPE z jedną pozycją na kwotę po rabacie
+    // 3. Tworzymy SESJĘ STRIPE bez stosowania rabatu LETME15
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      // payment_method_types możesz zostawić jak w dokumentacji Stripe;
-      // jeśli chcesz BLIK / PayPal, konfigurujesz to w panelu Stripe.
+      // Typy płatności ustawiasz w panelu Stripe – tutaj tylko deklaracja
       payment_method_types: ["card", "blik", "paypal"],
 
       line_items: [
@@ -112,10 +108,7 @@ app.post("/create-checkout-session", async (req, res) => {
             currency: "pln",
             product_data: {
               name: "Zamówienie letme.store",
-              description:
-                promoCode === "LETME15"
-                  ? "Zamówienie z rabatem LETME15 (-15%)"
-                  : "Zamówienie w sklepie letme.store",
+              description: "Zamówienie w sklepie letme.store",
             },
             unit_amount: amountToCharge,
           },
@@ -128,6 +121,7 @@ app.post("/create-checkout-session", async (req, res) => {
         email,
         items: JSON.stringify(items),
 
+        // metadane zostawiam, żebyś widział co przychodzi z frontu
         promoCode,
         backendTotal: backendTotal.toString(),
         backendDiscount: backendDiscount.toString(),
