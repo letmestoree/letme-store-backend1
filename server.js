@@ -9,6 +9,19 @@ app.use(cors());
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+/* Lista gier z rabatem 10% */
+const DISCOUNTED_GAMES = new Set([
+  "DayZ",
+  "Arc Raiders",
+  "Dead by Daylight",
+  "Resident Evil Requiem",
+  "Euro Truck Simulator 2",
+  "Escape from Tarkov",
+  "Battlefield 6",
+  "Path of Exile 2",
+  "Sea of Thieves",
+]);
+
 /* BREVO MAILER */
 async function sendOrderToBrevo(discord, email, items) {
   const productList = items
@@ -68,20 +81,20 @@ async function sendOrderToDiscord(discordUser, emailUser, items) {
   });
 }
 
-/* CHECKOUT – PROMOCJA WYŁĄCZONA */
+/* CHECKOUT – rabat 10% na wybrane gry */
 app.post("/create-checkout-session", async (req, res) => {
   try {
     const items = req.body.items || [];
     const discord = req.body.discord || "";
     const email = req.body.email || "";
 
-    // Te pola dalej przyjmujemy z frontu, ale nie używamy do liczenia rabatu:
+    // Te pola możesz dalej przyjmować z frontu, ale do liczenia używamy wyłącznie backendu:
     const promoCode = (req.body.promoCode || "").toUpperCase();
     const totalFromClient = Number(req.body.total) || 0;        // grosze
     const payableFromClient = Number(req.body.payable) || 0;    // grosze
     const discountFromClient = Number(req.body.discountAmount) || 0;
 
-    // 1. policz total po stronie backendu na podstawie items
+    // 1. base total (bez rabatów)
     const backendTotal = items.reduce(
       (sum, item) =>
         sum +
@@ -89,17 +102,23 @@ app.post("/create-checkout-session", async (req, res) => {
       0
     );
 
-    // 2. RABAT WYŁĄCZONY
-    const backendDiscount = 0;
+    // 2. policz rabat 10% tylko dla wskazanych gier
+    let backendDiscount = 0;
+    for (const item of items) {
+      const price = Number(item.price || 0);
+      const qty = Number(item.quantity || 1);
+      if (DISCOUNTED_GAMES.has(item.name)) {
+        const lineTotal = price * qty;
+        backendDiscount += Math.round(lineTotal * 0.10); // 10% rabatu
+      }
+    }
+
     const backendPayable = Math.max(backendTotal - backendDiscount, 0);
+    const amountToCharge = backendPayable; // grosze
 
-    // Kwota, którą faktycznie obciążamy klienta (grosze)
-    const amountToCharge = backendPayable;
-
-    // 3. Tworzymy SESJĘ STRIPE bez stosowania rabatu LETME15
+    // 3. Sesja Stripe z uwzględnieniem rabatu
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      // Typy płatności ustawiasz w panelu Stripe – tutaj tylko deklaracja
       payment_method_types: ["card", "blik", "paypal"],
 
       line_items: [
@@ -121,7 +140,6 @@ app.post("/create-checkout-session", async (req, res) => {
         email,
         items: JSON.stringify(items),
 
-        // metadane zostawiam, żebyś widział co przychodzi z frontu
         promoCode,
         backendTotal: backendTotal.toString(),
         backendDiscount: backendDiscount.toString(),
