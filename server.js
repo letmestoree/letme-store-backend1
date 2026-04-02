@@ -9,6 +9,19 @@ app.use(cors());
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+/* LISTA GIER Z RABATEM -10% */
+const DISCOUNTED_TITLES = [
+  "DayZ",
+  "Arc Raiders",
+  "Dead by Daylight",
+  "Resident Evil Requiem",
+  "Euro Truck Simulator 2",
+  "Escape from Tarkov",
+  "Battlefield 6",
+  "Path of Exile 2",
+  "Sea of Thieves",
+];
+
 /* BREVO MAILER */
 async function sendOrderToBrevo(discord, email, items) {
   const productList = items
@@ -68,70 +81,48 @@ async function sendOrderToDiscord(discordUser, emailUser, items) {
   });
 }
 
-/**
- * Lista produktów z rabatem 10%.
- * Porównuję po pełnej nazwie z frontu (field `name` z items[]).
- * Upewnij się, że nazwy na froncie są dokładnie takie same.
- */
-const DISCOUNTED_TITLES_10 = [
-  "DayZ",
-  "Arc Raiders",
-  "Dead by Daylight",
-  "Resident Evil Requiem",
-  "Euro Truck Simulator 2",
-  "Escape from Tarkov",
-  "Battlefield 6",
-  "Path of Exile 2",
-  "Sea of Thieves",
-];
-
-/* CHECKOUT – 10% rabatu na wybrane gry */
+/* CHECKOUT – RABAT -10% NA WYBRANE GRY */
 app.post("/create-checkout-session", async (req, res) => {
   try {
     const items = req.body.items || [];
     const discord = req.body.discord || "";
     const email = req.body.email || "";
 
-    // Te pola przyjmujemy z frontu, ale nadal traktujemy tylko informacyjnie:
+    // dalej przyjmujesz z frontu – tylko do podglądu:
     const promoCode = (req.body.promoCode || "").toUpperCase();
-    const totalFromClient = Number(req.body.total) || 0;        // grosze (info z frontu)
-    const payableFromClient = Number(req.body.payable) || 0;    // grosze (info z frontu)
+    const totalFromClient = Number(req.body.total) || 0;        // grosze
+    const payableFromClient = Number(req.body.payable) || 0;    // grosze
     const discountFromClient = Number(req.body.discountAmount) || 0;
 
-    // 1. policz total po stronie backendu na podstawie items
+    // 1. Suma całego koszyka po stronie backendu (bez rabatu)
     const backendTotal = items.reduce(
       (sum, item) =>
-        sum + Number(item.price || 0) * Number(item.quantity || 1),
+        sum +
+        Number(item.price || 0) * Number(item.quantity || 1),
       0
     );
 
-    // 2. policz rabat 10% TYLKO na wybrane tytuły
-    let backendDiscount = 0;
-
-    for (const item of items) {
-      const name = (item.name || "").trim();
+    // 2. Liczymy rabat -10% TYLKO dla wybranych tytułów
+    const discountedPart = items.reduce((sum, item) => {
+      const name = String(item.name || "").trim();
       const price = Number(item.price || 0);
       const qty = Number(item.quantity || 1);
 
-      if (DISCOUNTED_TITLES_10.includes(name)) {
-        const itemTotal = price * qty;
-        const itemDiscount = Math.round(itemTotal * 0.10); // 10%
-        backendDiscount += itemDiscount;
+      if (DISCOUNTED_TITLES.includes(name)) {
+        return sum + price * qty;
       }
-    }
+      return sum;
+    }, 0);
 
-    if (backendDiscount < 0) backendDiscount = 0;
-    if (backendDiscount > backendTotal) backendDiscount = backendTotal;
-
-    const backendPayable = backendTotal - backendDiscount;
+    const backendDiscount = Math.round(discountedPart * 0.10); // 10%
+    const backendPayable = Math.max(backendTotal - backendDiscount, 0);
 
     // Kwota, którą faktycznie obciążamy klienta (grosze)
     const amountToCharge = backendPayable;
 
-    // 3. Tworzymy SESJĘ STRIPE – kwota już po rabacie
+    // 3. Tworzymy SESJĘ STRIPE z uwzględnieniem rabatu
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      // Typy płatności ustawiasz w panelu Stripe; tutaj deklaracja
       payment_method_types: ["card", "blik", "paypal"],
 
       line_items: [
@@ -140,9 +131,7 @@ app.post("/create-checkout-session", async (req, res) => {
             currency: "pln",
             product_data: {
               name: "Zamówienie letme.store",
-              description: backendDiscount > 0
-                ? "Zamówienie z rabatem 10% na wybrane gry"
-                : "Zamówienie w sklepie letme.store",
+              description: "Zamówienie w sklepie letme.store",
             },
             unit_amount: amountToCharge,
           },
@@ -155,7 +144,6 @@ app.post("/create-checkout-session", async (req, res) => {
         email,
         items: JSON.stringify(items),
 
-        discountType: "SELECTED_TITLES_10",
         promoCode,
         backendTotal: backendTotal.toString(),
         backendDiscount: backendDiscount.toString(),
