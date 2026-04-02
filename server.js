@@ -9,19 +9,6 @@ app.use(cors());
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-/* LISTA GIER Z RABATEM -10% */
-const DISCOUNTED_TITLES = [
-  "DayZ",
-  "Arc Raiders",
-  "Dead by Daylight",
-  "Resident Evil Requiem",
-  "Euro Truck Simulator 2",
-  "Escape from Tarkov",
-  "Battlefield 6",
-  "Path of Exile 2",
-  "Sea of Thieves",
-];
-
 /* BREVO MAILER */
 async function sendOrderToBrevo(discord, email, items) {
   const productList = items
@@ -81,20 +68,34 @@ async function sendOrderToDiscord(discordUser, emailUser, items) {
   });
 }
 
-/* CHECKOUT – RABAT -10% NA WYBRANE GRY */
+/* LISTA GIER Z RABATEM -10% */
+const DISCOUNTED_TITLES_10 = new Set([
+  "DayZ (KONTO)",
+  "Arc Raiders (KONTO)",
+  "Dead by Daylight (KONTO)",
+  "Resident Evil Requiem (KONTO)",
+  "Euro Truck Simulator 2 (KONTO)",
+  "Escape from Tarkov (KONTO)",
+  "Battlefield 6 (KONTO)",
+  "Path of Exile 2 (KONTO)",
+  "Sea of Thieves (KONTO)",
+]);
+
+/* CHECKOUT – RABAT 10% NA WYBRANE GRY */
 app.post("/create-checkout-session", async (req, res) => {
   try {
     const items = req.body.items || [];
     const discord = req.body.discord || "";
     const email = req.body.email || "";
 
-    // dalej przyjmujesz z frontu – tylko do podglądu:
+    // Te pola dalej przyjmujemy z frontu (do debugowania),
+    // ale nie polegamy na nich przy liczeniu kwoty:
     const promoCode = (req.body.promoCode || "").toUpperCase();
     const totalFromClient = Number(req.body.total) || 0;        // grosze
     const payableFromClient = Number(req.body.payable) || 0;    // grosze
     const discountFromClient = Number(req.body.discountAmount) || 0;
 
-    // 1. Suma całego koszyka po stronie backendu (bez rabatu)
+    // 1. Suma brutto po stronie backendu (bez rabatów)
     const backendTotal = items.reduce(
       (sum, item) =>
         sum +
@@ -102,25 +103,27 @@ app.post("/create-checkout-session", async (req, res) => {
       0
     );
 
-    // 2. Liczymy rabat -10% TYLKO dla wybranych tytułów
-    const discountedPart = items.reduce((sum, item) => {
-      const name = String(item.name || "").trim();
+    // 2. Obliczamy rabat -10% tylko dla wybranych gier
+    const backendDiscount = items.reduce((discountSum, item) => {
+      const name = item.name || "";
       const price = Number(item.price || 0);
       const qty = Number(item.quantity || 1);
 
-      if (DISCOUNTED_TITLES.includes(name)) {
-        return sum + price * qty;
+      if (DISCOUNTED_TITLES_10.has(name)) {
+        const subtotal = price * qty;
+        const itemDiscount = Math.round(subtotal * 0.10); // 10% w groszach
+        return discountSum + itemDiscount;
       }
-      return sum;
+
+      return discountSum;
     }, 0);
 
-    const backendDiscount = Math.round(discountedPart * 0.10); // 10%
     const backendPayable = Math.max(backendTotal - backendDiscount, 0);
 
     // Kwota, którą faktycznie obciążamy klienta (grosze)
     const amountToCharge = backendPayable;
 
-    // 3. Tworzymy SESJĘ STRIPE z uwzględnieniem rabatu
+    // 3. Tworzymy SESJĘ STRIPE z uwzględnionym rabatem -10% na wybrane gry
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card", "blik", "paypal"],
@@ -144,6 +147,7 @@ app.post("/create-checkout-session", async (req, res) => {
         email,
         items: JSON.stringify(items),
 
+        // Metadane diagnostyczne
         promoCode,
         backendTotal: backendTotal.toString(),
         backendDiscount: backendDiscount.toString(),
